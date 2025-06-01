@@ -1,12 +1,8 @@
 fastapi
 uvicorn
 openai
-sentence-transformers
-newspaper3k
-duckduckgo-search
-faiss-cpu
-langchain
-langchain-community
 psycopg2-binary
-lxml
 python-dotenv
+requests
+beautifulsoup4
+lxml
