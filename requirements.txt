@@ -7,7 +7,6 @@ duckduckgo-search
 faiss-cpu
 langchain
 langchain-community
-langchain-huggingface
 psycopg2-binary
 lxml
 python-dotenv
