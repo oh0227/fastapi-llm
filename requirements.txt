@@ -5,12 +5,9 @@ sentence-transformers
 newspaper3k
 duckduckgo-search
 faiss-cpu
-unstructured
 langchain
-langchain-unstructured
 langchain-community
 langchain-huggingface
 psycopg2-binary
-beautifulsoup4
 lxml
 python-dotenv
