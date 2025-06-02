@@ -7,3 +7,5 @@ requests
 beautifulsoup4
 lxml
 nest_asyncio
+sklean
+scikit-learns
