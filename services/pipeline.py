@@ -11,14 +11,13 @@ from .db import fetch_user_preference_vector, fetch_message_embedding
 from .utils import is_recommended
 from schemas import AnalyzeResponse
 
-# OpenAI client 초기화 (openai 패키지 사용)
-import openai
-openai.api_key = OPENAI_API_KEY
+from openai import OpenAI
 
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 def openai_chat_completion(prompt: str) -> str:
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model=GPT_MODEL,
             messages=[{"role": "user", "content": prompt}],
             timeout=15
@@ -28,18 +27,16 @@ def openai_chat_completion(prompt: str) -> str:
         print("❗ openai_chat_completion 실패:", e)
         raise e
 
-
 def openai_embedding(text: str) -> List[float]:
     try:
-        response = openai.Embedding.create(
-            model="text-embedding-3-small",  # 가벼운 임베딩 모델 선택
+        response = client.embeddings.create(
+            model="text-embedding-3-small",
             input=text
         )
-        return response['data'][0]['embedding']
+        return response.data[0].embedding
     except Exception as e:
         print("❗ openai_embedding 실패:", e)
         raise e
-
 
 def clarify_with_llm(message: str) -> dict:
     prompt = f"""
@@ -67,13 +64,12 @@ def clarify_with_llm(message: str) -> dict:
             "web_keywords": []
         }
 
-
 def fetch_user_messages_by_keywords(cochat_id: str, keywords: List[str]) -> List[str]:
     try:
         import psycopg2
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor()
-        keyword_clause = " OR ".join([f"content ILIKE %s" for _ in keywords])
+        keyword_clause = " OR ".join(["content ILIKE %s" for _ in keywords])
         params = [f"%{kw}%" for kw in keywords]
         query = f"""
             SELECT content FROM messages
@@ -90,17 +86,14 @@ def fetch_user_messages_by_keywords(cochat_id: str, keywords: List[str]) -> List
         print("❗ DB 검색 실패:", e)
         return []
 
-
 def search_user_db_context(content: str, user_contexts: List[str]) -> List[str]:
     if not user_contexts:
         return []
     query_vec = openai_embedding(content)
-    # user_contexts 벡터 생성 (API 호출 많이 발생할 수 있어 주의)
     context_vecs = [openai_embedding(txt) for txt in user_contexts]
     sims = cosine_similarity([query_vec], context_vecs)[0]
     top_k = sorted(range(len(sims)), key=lambda i: -sims[i])[:3]
     return [user_contexts[i] for i in top_k]
-
 
 def clarify_with_rag(message: str, context_list: List[str]) -> str:
     context = "\n\n".join(context_list)
@@ -111,25 +104,20 @@ def clarify_with_rag(message: str, context_list: List[str]) -> str:
         print("❗ clarify_with_rag 실패:", e)
         return message
 
-
 def search_web_pages(query: str, max_results: int = 1) -> List[str]:
-    # 간단한 DuckDuckGo API 대신, requests를 이용한 비공식 검색(단순 크롤링) 또는 외부 API 호출
-    # 여긴 실제 서비스용으로는 공식 API 또는 서드파티 검색 API 사용 권장
-    # 아래는 단순 예시 (검색 결과 url 1개만 반환)
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         url = f"https://duckduckgo.com/html/?q={query}"
         r = requests.get(url, headers=headers, timeout=5)
-        links = re.findall(r'<a rel="nofollow" class="result__a" href="([^"]+)"', r.text)
+
+        links = re.findall(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"', r.text)
         filtered = [link for link in links if not any(b in link for b in BLOCKED_DOMAINS)]
         return filtered[:max_results]
     except Exception as e:
         print("❗ search_web_pages 실패:", e)
         return []
 
-
 def extract_text_from_url(url: str) -> str:
-    # newspaper 대신 requests + bs4로 간단히 본문 추출 (제한적)
     from bs4 import BeautifulSoup
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -141,7 +129,6 @@ def extract_text_from_url(url: str) -> str:
     except Exception as e:
         print(f"❗ URL 본문 추출 실패: {url}", e)
         return ""
-
 
 def summarize_and_classify(message: str, context: str) -> dict:
     user_prompt = f"""
@@ -163,7 +150,7 @@ JSON 형식만 반환해:
 }
 """
     try:
-        res = openai.ChatCompletion.create(
+        res = client.chat.completions.create(
             model=GPT_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -183,7 +170,6 @@ JSON 형식만 반환해:
     except Exception as e:
         print("❗ 요약/분류 실패:", e)
         return {"summary": "요약 실패", "category": "others"}
-
 
 def process_message_pipeline(message) -> AnalyzeResponse:
     try:
@@ -206,11 +192,9 @@ def process_message_pipeline(message) -> AnalyzeResponse:
                 for url in urls:
                     text = extract_text_from_url(url)
                     if text:
-                        # 벡터스토어 기능 제거 → 별도 저장이나 처리 X
                         break
 
-        context_text = ""  # 벡터스토어 유사도 검색 제거
-
+        context_text = ""
         metadata = summarize_and_classify(clarified, context_text)
         message_vector = openai_embedding(clarified)
         user_vector = fetch_user_preference_vector(message.cochat_id) if message.cochat_id else []
@@ -240,11 +224,9 @@ def process_message_pipeline(message) -> AnalyzeResponse:
         print("❗ 전체 파이프라인 실패:", e)
         raise e
 
-
 def create_embedding(req):
     embedding = openai_embedding(req.text)
     return {"embedding": embedding, "dim": len(embedding)}
-
 
 def update_preference_by_message(req):
     message_vec = fetch_message_embedding(req.message_id)
