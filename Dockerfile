@@ -25,4 +25,4 @@ COPY . .
 EXPOSE 8000
 
 # ✅ 명령어: Uvicorn으로 FastAPI 실행 (main.py에 app 객체 존재한다고 가정)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "main.py"]
