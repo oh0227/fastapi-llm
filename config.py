@@ -1,7 +1,7 @@
 # config.py
 import os
 
-GPT_MODEL = os.getenv("GPT_MODEL", "gpt-4o")
+GPT_MODEL = os.getenv("GPT_MODEL", "gpt-4o-32k")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", "faiss_index")
 BLOCKED_DOMAINS = ['namu.wiki', 'collinsdictionary.com', 'reverso.net']
