@@ -7,4 +7,4 @@ requests
 beautifulsoup4
 lxml
 nest_asyncio
-scikit-learns
+scikit-learn
