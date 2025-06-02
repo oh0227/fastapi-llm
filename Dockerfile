@@ -21,8 +21,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ✅ 앱 소스 복사
 COPY . .
 
-# ✅ 포트 설정 (예: FastAPI 8000)
-EXPOSE 8000
-
 # ✅ 명령어: Uvicorn으로 FastAPI 실행 (main.py에 app 객체 존재한다고 가정)
 CMD ["python", "main.py"]
