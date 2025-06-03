@@ -8,3 +8,4 @@ beautifulsoup4
 lxml
 nest_asyncio
 scikit-learn
+dateparser

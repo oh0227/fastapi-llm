@@ -12,6 +12,8 @@ from .utils import is_recommended
 from schemas import AnalyzeResponse
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
+from datetime import datetime, timedelta
+import dateparser
 
 from openai import OpenAI
 
@@ -116,14 +118,43 @@ def fetch_user_messages_by_keywords(cochat_id: str, keywords: List[str]) -> List
         import psycopg2
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor()
-        keyword_clause = " OR ".join(["content ILIKE %s" for _ in keywords])
-        params = [f"%{kw}%" for kw in keywords]
+
+        time_conditions = []
+        content_conditions = []
+        params = []
+
+        for kw in keywords:
+            parsed_time = dateparser.parse(kw, settings={'RELATIVE_BASE': datetime.now()})
+            if parsed_time:
+                start = parsed_time.replace(hour=0, minute=0, second=0, microsecond=0)
+                end = start + timedelta(days=1)
+                time_conditions.append("(messages.created_at >= %s AND messages.created_at < %s)")
+                params.extend([start, end])
+            else:
+                content_conditions.append("content ILIKE %s")
+                params.append(f"%{kw}%")
+
+        where_clauses = []
+
+        if time_conditions:
+            where_clauses.append("(" + " OR ".join(time_conditions) + ")")
+        if content_conditions:
+            where_clauses.append("(" + " OR ".join(content_conditions) + ")")
+
+        if not where_clauses:
+            print("⚠️ 유효한 검색 조건이 없습니다.")
+            return []
+
+        where_sql = " AND ".join(where_clauses)
+
         query = f"""
             SELECT content FROM messages
             JOIN users ON messages.user_id = users.cochat_id
-            WHERE users.cochat_id = %s AND ({keyword_clause})
+            WHERE users.cochat_id = %s AND {where_sql}
+            ORDER BY messages.created_at DESC
             LIMIT 20;
         """
+
         cur.execute(query, (cochat_id, *params))
         rows = cur.fetchall()
         cur.close()
