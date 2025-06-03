@@ -351,7 +351,7 @@ def process_message_pipeline(message) -> AnalyzeResponse:
         # 4. 요약 및 분류
         context_text = ""  # 현재 context는 사용하지 않음
         print("🔹 summarize_and_classify 호출")
-        metadata = summarize_and_classify(clarified, context_text)
+        metadata = summarize_and_classify(clarified, context_text, message.cochat_id)
         print("🔹 요약/분류 결과:", metadata)
 
         # 5. 메시지 임베딩
