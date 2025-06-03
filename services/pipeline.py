@@ -43,10 +43,19 @@ def openai_embedding(text: str) -> List[float]:
         raise e
 
 
+def extract_json_block(text: str) -> str:
+    """
+    LLM 응답에서 JSON 블록만 추출
+    """
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
+        return match.group(0)
+    else:
+        raise ValueError("⚠️ JSON 블록을 찾을 수 없습니다. 전체 응답: " + text[:200])
+
 def clarify_with_llm(message: str) -> dict:
     print("🔹 clarify_with_llm 시작:", message[:100])
-    ...
-def clarify_with_llm(message: str) -> dict:
+
     prompt = f"""
 다음 메시지를 더 명확하게 풀어쓰고, 과거 문맥 또는 외부 정보가 필요한지 판단해줘.
 형식:
@@ -59,9 +68,21 @@ def clarify_with_llm(message: str) -> dict:
 }}
 메시지: "{message}"
 """
+
     try:
-        content = openai_chat_completion(prompt)
-        return json.loads(content)
+        raw_response = openai_chat_completion(prompt)
+        print("🔹 LLM 응답 원문:", raw_response[:300])
+        json_text = extract_json_block(raw_response)
+        parsed = json.loads(json_text)
+
+        return {
+            "clarified": parsed.get("clarified", message),
+            "needs_user_context": parsed.get("needs_user_context", False),
+            "db_keywords": parsed.get("db_keywords", []),
+            "needs_external_info": parsed.get("needs_external_info", False),
+            "web_keywords": parsed.get("web_keywords", [])
+        }
+
     except Exception as e:
         print("❗ clarify_with_llm 실패:", e)
         return {
