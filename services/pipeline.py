@@ -120,7 +120,7 @@ def fetch_user_messages_by_keywords(cochat_id: str, keywords: List[str]) -> List
         params = [f"%{kw}%" for kw in keywords]
         query = f"""
             SELECT content FROM messages
-            JOIN users ON messages.user_id = users.id
+            JOIN users ON messages.user_id = users.cochat_id
             WHERE users.cochat_id = %s AND ({keyword_clause})
             LIMIT 20;
         """
