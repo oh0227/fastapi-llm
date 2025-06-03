@@ -281,8 +281,18 @@ def process_message_pipeline(message) -> AnalyzeResponse:
             print(f"🔹 사용자 메시지 수: {len(user_msgs)}")
             context = search_user_db_context(clarified, user_msgs)
             print(f"🔹 유사도 높은 문맥 수: {len(context)}")
-            clarified = clarify_with_rag(clarified, context)
+
+            # 보정 전후 메시지 비교 및 벡터 변화 로그
+            before_rag = clarified
+            clarified = clarify_with_rag(before_rag, context)
             print("🔹 재명확화 완료")
+            print(f"🔹 clarify_with_rag 변경 전: {before_rag}")
+            print(f"🔹 clarify_with_rag 변경 후: {clarified}")
+
+            before_vec = openai_embedding(before_rag)
+            after_vec = openai_embedding(clarified)
+            print("🔹 clarify_with_rag 전 벡터 (앞 10개):", before_vec[:10])
+            print("🔹 clarify_with_rag 후 벡터 (앞 10개):", after_vec[:10])
 
         # 3. 외부 정보 검색
         if needs_external_info and web_keywords:
