@@ -10,6 +10,8 @@ from config import GPT_MODEL, OPENAI_API_KEY, DB_CONFIG, BLOCKED_DOMAINS
 from .db import fetch_user_preference_vector, fetch_message_embedding
 from .utils import is_recommended
 from schemas import AnalyzeResponse
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 from openai import OpenAI
 
@@ -59,6 +61,7 @@ def clarify_with_llm(message: str) -> dict:
     prompt = f"""
 다음 메시지를 읽고 은어나 고유 명사와 같이 벡터화하기에 의미가 제대로 벡터화되지 않을 것 같은 단어를 그 부분만 의미를 명확하게 교체해줘.(플젝 -> 프로젝트) 
 만약, 너도 모르는 너무 학술적인 용어나 이전 문맥이 꼭 필요한 경우(대명사가 가리키는 것이 메시지 내에 나와있지 않은 경우 등)라면 과거 문맥 또는 외부 정보가 필요한지 판단해줘.
+대신에 후에 문맥 정보 검색을 위해 RAG을 이용할 건데 처리가 너무 오래걸리면 안되니까 키워드는 네가 중요하다가 판단되는 거 최대 3개만 넘겨줘.
 형식:
 {{
   "clarified": "...",
@@ -133,6 +136,7 @@ def clarify_with_rag(message: str, context_list: List[str]) -> str:
     except Exception as e:
         print("❗ clarify_with_rag 실패:", e)
         return message
+from urllib.parse import urlparse, parse_qs, unquote
 
 def search_web_pages(query: str, max_results: int = 1) -> List[str]:
     try:
@@ -140,25 +144,65 @@ def search_web_pages(query: str, max_results: int = 1) -> List[str]:
         url = f"https://duckduckgo.com/html/?q={query}"
         r = requests.get(url, headers=headers, timeout=5)
 
-        links = re.findall(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"', r.text)
-        filtered = [link for link in links if not any(b in link for b in BLOCKED_DOMAINS)]
-        return filtered[:max_results]
+        raw_links = re.findall(r'<a[^>]*class="result__a"[^>]*href="([^"]+)"', r.text)
+        cleaned_links = []
+
+        for raw_link in raw_links:
+            # 예: //duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com
+            if "uddg=" in raw_link:
+                parsed_url = urlparse(raw_link)
+                query_params = parse_qs(parsed_url.query)
+                uddg = query_params.get("uddg")
+                if uddg:
+                    real_url = unquote(uddg[0])
+                    if not any(blocked in real_url for blocked in BLOCKED_DOMAINS):
+                        cleaned_links.append(real_url)
+            else:
+                # 그냥 일반적인 링크일 경우 (드물게 발생)
+                if raw_link.startswith("//"):
+                    real_url = "https:" + raw_link
+                else:
+                    real_url = raw_link
+                if not any(blocked in real_url for blocked in BLOCKED_DOMAINS):
+                    cleaned_links.append(real_url)
+
+        return cleaned_links[:max_results]
+
     except Exception as e:
         print("❗ search_web_pages 실패:", e)
         return []
 
+
 def extract_text_from_url(url: str) -> str:
-    from bs4 import BeautifulSoup
     try:
+        # 🔹 URL 보정: 스킴이 없으면 https:// 추가
+        parsed = urlparse(url)
+        if not parsed.scheme:
+            if url.startswith("//"):
+                url = "https:" + url
+            else:
+                url = "https://" + url
+
         headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(url, headers=headers, timeout=5)
+        r.raise_for_status()  # 🔹 HTTP 오류 발생 시 예외 처리
+
         soup = BeautifulSoup(r.content, "lxml")
+
+        # 🔹 p 태그만 추출 (길이 있는 것만)
         paragraphs = soup.find_all("p")
-        text = "\n".join(p.get_text() for p in paragraphs if len(p.get_text()) > 20)
+        text = "\n".join(p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 20)
+
+        if not text:
+            print(f"⚠️ 본문이 비어 있습니다: {url}")
         return text.strip()
+
+    except requests.exceptions.RequestException as req_err:
+        print(f"❗ [요청 에러] URL 본문 추출 실패: {url}\n{req_err}")
     except Exception as e:
-        print(f"❗ URL 본문 추출 실패: {url}", e)
-        return ""
+        print(f"❗ [기타 에러] URL 본문 추출 실패: {url}\n{e}")
+
+    return ""
 
 def summarize_and_classify(message: str, context: str) -> dict:
     user_prompt = f"""
