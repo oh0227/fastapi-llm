@@ -249,7 +249,15 @@ def extract_text_from_url(url: str) -> str:
 
     return ""
 
-def summarize_and_classify(message: str, context: str) -> dict:
+from services.db import fetch_user_preference_categories
+
+def summarize_and_classify(message: str, context: str, cochat_id: str) -> dict:
+    categories = fetch_user_preference_categories(cochat_id)
+    if not categories:
+        categories = ["deadline", "payment", "public", "office", "others"]  # fallback
+
+    category_str = '", "'.join(categories)
+
     user_prompt = f"""
 메시지: {message}
 문맥: {context}
@@ -259,15 +267,17 @@ JSON:
   "category": "..."
 }}
 """
-    system_prompt = """
+
+    system_prompt = f"""
 너는 한국어 메신저 어시스턴트야.
-카테고리는: "deadline", "payment", "public", "office", "others"
+카테고리는: "{category_str}"
 JSON 형식만 반환해:
-{
+{{
   "summary": "...",
   "category": "..."
-}
+}}
 """
+
     try:
         res = client.chat.completions.create(
             model=GPT_MODEL,
