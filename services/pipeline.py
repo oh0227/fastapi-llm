@@ -29,15 +29,23 @@ def openai_chat_completion(prompt: str) -> str:
 
 def openai_embedding(text: str) -> List[float]:
     try:
+        print("🔹 openai_embedding 호출: 입력 길이 =", len(text))
         response = client.embeddings.create(
             model="text-embedding-3-small",
             input=text
         )
-        return response.data[0].embedding
+        vector = response.data[0].embedding
+        short_vector = vector[:10] + (["..."] if len(vector) > 10 else [])
+        print("🔹 임베딩 결과 (요약):", short_vector)
+        return vector
     except Exception as e:
         print("❗ openai_embedding 실패:", e)
         raise e
 
+
+def clarify_with_llm(message: str) -> dict:
+    print("🔹 clarify_with_llm 시작:", message[:100])
+    ...
 def clarify_with_llm(message: str) -> dict:
     prompt = f"""
 다음 메시지를 더 명확하게 풀어쓰고, 과거 문맥 또는 외부 정보가 필요한지 판단해줘.
@@ -174,32 +182,59 @@ JSON 형식만 반환해:
 def process_message_pipeline(message) -> AnalyzeResponse:
     try:
         original = message.content
+        print(f"🔹 Pipeline 시작 - 원본 메시지 길이: {len(original)}")
+
+        # 1. 메시지 명확화
+        print("🔹 clarify_with_llm 호출")
         gpt_result = clarify_with_llm(original)
+        print("🔹 clarify 결과:", gpt_result)
+
         clarified = gpt_result["clarified"]
         user_keywords = gpt_result.get("db_keywords", [])
         web_keywords = gpt_result.get("web_keywords", [])
         needs_user_context = gpt_result.get("needs_user_context", False)
         needs_external_info = gpt_result.get("needs_external_info", False)
 
+        # 2. 사용자 문맥 처리
         if needs_user_context and user_keywords and message.cochat_id:
+            print(f"🔹 사용자 문맥 필요 - 키워드: {user_keywords}")
             user_msgs = fetch_user_messages_by_keywords(message.cochat_id, user_keywords)
+            print(f"🔹 사용자 메시지 수: {len(user_msgs)}")
             context = search_user_db_context(clarified, user_msgs)
+            print(f"🔹 유사도 높은 문맥 수: {len(context)}")
             clarified = clarify_with_rag(clarified, context)
+            print("🔹 재명확화 완료")
 
+        # 3. 외부 정보 검색
         if needs_external_info and web_keywords:
+            print(f"🔹 외부 정보 필요 - 키워드: {web_keywords}")
             for kw in web_keywords:
                 urls = search_web_pages(kw)
+                print(f"🔹 검색된 URL들: {urls}")
                 for url in urls:
                     text = extract_text_from_url(url)
                     if text:
+                        print(f"🔹 URL에서 본문 추출 성공: {url}")
                         break
 
-        context_text = ""
+        # 4. 요약 및 분류
+        context_text = ""  # 현재 context는 사용하지 않음
+        print("🔹 summarize_and_classify 호출")
         metadata = summarize_and_classify(clarified, context_text)
-        message_vector = openai_embedding(clarified)
-        user_vector = fetch_user_preference_vector(message.cochat_id) if message.cochat_id else []
-        recommended = is_recommended(user_vector, message_vector)
+        print("🔹 요약/분류 결과:", metadata)
 
+        # 5. 메시지 임베딩
+        print("🔹 openai_embedding 호출 (clarified 메시지)")
+        message_vector = openai_embedding(clarified)
+        print("🔹 메시지 벡터 (앞 10개):", message_vector[:10], "..." if len(message_vector) > 10 else "")
+
+        # 6. 사용자 벡터와 추천 여부
+        user_vector = fetch_user_preference_vector(message.cochat_id) if message.cochat_id else []
+        print("🔹 사용자 벡터 (앞 10개):", user_vector[:10], "..." if len(user_vector) > 10 else "")
+        recommended = is_recommended(user_vector, message_vector)
+        print("🔹 추천 여부:", recommended)
+
+        # 7. 요약 실패 시 fallback 처리
         if metadata.get("summary") == "요약 실패" and recommended:
             short = clarified[:50] + "..." if len(clarified) > 50 else clarified
             fallback = {
@@ -210,7 +245,9 @@ def process_message_pipeline(message) -> AnalyzeResponse:
                 "others": f"기타 메시지입니다: {short}"
             }.get(metadata.get("category", "others"), short)
             metadata["summary"] = fallback
+            print("🔹 요약 실패 fallback 사용:", fallback)
 
+        print("✅ Pipeline 완료")
         return AnalyzeResponse(
             content=original,
             clarified=clarified,
